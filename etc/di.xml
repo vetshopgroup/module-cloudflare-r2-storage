@@ -47,4 +47,15 @@
     <type name="Magento\MediaStorage\Block\System\Config\System\Storage\Media\Synchronize">
         <plugin name="magezero_r2_sync_template" type="MageZero\CloudflareR2\Block\MediaStorage\System\Config\System\Storage\Media\Synchronize\Plugin"/>
     </type>
+    <!-- One cleaner for the request: it removes, at shutdown, the local copies of files known to be in the bucket. -->
+    <type name="MageZero\CloudflareR2\Model\MediaStorage\File\Storage\R2">
+        <arguments>
+            <argument name="localCopies" xsi:type="object">MageZero\CloudflareR2\Model\LocalCopyCleaner</argument>
+        </arguments>
+    </type>
+    <type name="MageZero\CloudflareR2\Plugin\MediaStorage\DatabaseHelperPlugin">
+        <arguments>
+            <argument name="localCopies" xsi:type="object">MageZero\CloudflareR2\Model\LocalCopyCleaner</argument>
+        </arguments>
+    </type>
 </config>

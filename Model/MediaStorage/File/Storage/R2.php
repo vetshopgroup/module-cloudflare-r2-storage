@@ -12,6 +12,7 @@ use Magento\MediaStorage\Helper\File\Media as MediaHelper;
 use Magento\MediaStorage\Helper\File\Storage\Database as StorageHelper;
 use MageZero\CloudflareR2\Model\Config;
 use MageZero\CloudflareR2\Model\KeyFormatter;
+use MageZero\CloudflareR2\Model\LocalCopyCleaner;
 use MageZero\CloudflareR2\Model\R2ClientFactory;
 use MageZero\CloudflareR2\Model\VariantStalenessChecker;
 use Psr\Log\LoggerInterface;
@@ -37,6 +38,7 @@ class R2 extends DataObject
     private IoFile $ioFile;
     private HttpClient $httpClient;
     private VariantStalenessChecker $stalenessChecker;
+    private ?LocalCopyCleaner $localCopies;
     private array $errors = [];
     private ?array $storageData = null;
     /** @var array<string,bool> */
@@ -52,7 +54,8 @@ class R2 extends DataObject
         R2ClientFactory $clientFactory,
         FileDriver $driver,
         ?IoFile $ioFile = null,
-        ?HttpClient $httpClient = null
+        ?HttpClient $httpClient = null,
+        ?LocalCopyCleaner $localCopies = null
     ) {
         parent::__construct();
         $this->config = $config;
@@ -66,6 +69,8 @@ class R2 extends DataObject
         $this->httpClient = $httpClient
             ?? \Magento\Framework\App\ObjectManager::getInstance()->get(HttpClient::class);
         $this->stalenessChecker = new VariantStalenessChecker($this->httpClient);
+        // Given by di.xml; null only where a test leaves it out.
+        $this->localCopies = $localCopies;
     }
 
     public function init(): self
@@ -251,6 +256,7 @@ class R2 extends DataObject
             $this->logger->critical($exception->getMessage());
             throw new LocalizedException(__('Unable to save file "%1"', $path));
         }
+        $this->trackLocalCopy($path);
 
         return true;
     }
@@ -417,6 +423,8 @@ class R2 extends DataObject
                     ]);
                     if (isset($content['Body'])) {
                         $relative = $this->keyFormatter->fromKey($object['Key']);
+                        // The caller writes these to disk (the CMS image browser lists folders that way).
+                        $this->trackLocalCopy($relative);
                         $directory = $this->driver->getParentDirectory($relative);
                         $files[] = [
                             // phpcs:ignore Magento2.Functions.DiscouragedFunction -- safe: input is R2 API key, not user data
@@ -436,6 +444,11 @@ class R2 extends DataObject
 
     public function deleteDirectory($path): self
     {
+        if ($this->isOutsideMedia((string)$path)) {
+            // e.g. pub/static/_cache/merged, cleaned through the media storage helper when the merged
+            // CSS/JS is cleaned: not media, so not in the bucket.
+            return $this;
+        }
         $prefix = $this->buildKeyPrefix($this->storageHelper->getMediaRelativePath($path));
         if ($prefix === '') {
             return $this;
@@ -454,6 +467,34 @@ class R2 extends DataObject
         }
 
         return $this->mediaBaseDirectory;
+    }
+
+    /**
+     * Whether an absolute path is outside pub/media. Relative paths are media paths.
+     *
+     * @param string $path
+     * @return bool
+     */
+    private function isOutsideMedia(string $path): bool
+    {
+        if ($path === '' || $path[0] !== '/') {
+            return false;
+        }
+        $mediaBase = rtrim($this->getMediaBaseDirectory(), '/') . '/';
+        return strpos(rtrim($path, '/') . '/', $mediaBase) !== 0;
+    }
+
+    /**
+     * Notes that a file is in the bucket, so its copy on disk can go at the end of the request.
+     *
+     * @param string $path
+     * @return void
+     */
+    private function trackLocalCopy(string $path): void
+    {
+        if ($this->localCopies !== null) {
+            $this->localCopies->track($path);
+        }
     }
 
     private function getBucket(): string

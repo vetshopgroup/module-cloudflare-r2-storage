@@ -3,6 +3,7 @@ namespace MageZero\CloudflareR2\Plugin\MediaStorage;
 
 use MageZero\CloudflareR2\Model\Config;
 use MageZero\CloudflareR2\Model\DownloadedFileTracker;
+use MageZero\CloudflareR2\Model\LocalCopyCleaner;
 use MageZero\CloudflareR2\Model\MediaStorage\File\Storage\R2;
 use MageZero\CloudflareR2\Model\MediaStorage\File\Storage\R2Factory;
 use Magento\MediaStorage\Helper\File\Storage\Database;
@@ -17,18 +18,22 @@ class DatabaseHelperPlugin
     private R2Factory $r2Factory;
     private DownloadedFileTracker $downloadTracker;
     private LoggerInterface $logger;
+    private ?LocalCopyCleaner $localCopies;
     private ?R2 $r2StorageModel = null;
 
     public function __construct(
         Config $config,
         R2Factory $r2Factory,
         DownloadedFileTracker $downloadTracker,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        ?LocalCopyCleaner $localCopies = null
     ) {
         $this->config = $config;
         $this->r2Factory = $r2Factory;
         $this->downloadTracker = $downloadTracker;
         $this->logger = $logger;
+        // Given by di.xml; null only where a test leaves it out.
+        $this->localCopies = $localCopies;
     }
 
     public function afterCheckDbUsage(Database $subject, $result)
@@ -75,6 +80,9 @@ class DatabaseHelperPlugin
 
             if ($result) {
                 $this->downloadTracker->track($relativePath);
+                if ($this->localCopies !== null) {
+                    $this->localCopies->track($relativePath);
+                }
             }
             return $result;
         }

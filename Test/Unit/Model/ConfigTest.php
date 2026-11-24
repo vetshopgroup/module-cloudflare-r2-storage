@@ -128,4 +128,26 @@ class ConfigTest extends TestCase
         $config = new Config($scopeConfig);
         $this->assertSame('http://media.example.com', $config->getBaseMediaUrl());
     }
+
+    /**
+     * @dataProvider removesLocalCopiesProvider
+     */
+    public function testRemovesLocalCopies(?string $value, bool $expected): void
+    {
+        $scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $scopeConfig->method('getValue')->willReturnCallback(
+            static fn(string $path) => $path === Config::XML_PATH_REMOVE_LOCAL_COPIES ? $value : null
+        );
+
+        $this->assertSame($expected, (new Config($scopeConfig))->removesLocalCopies());
+    }
+
+    public function removesLocalCopiesProvider(): array
+    {
+        return [
+            'on' => ['1', true],
+            'off' => ['0', false],
+            'not set' => [null, true],
+        ];
+    }
 }

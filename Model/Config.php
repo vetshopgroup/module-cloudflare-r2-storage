@@ -15,6 +15,7 @@ class Config
     public const XML_PATH_KEY_PREFIX = 'magezero_r2/general/key_prefix';
     public const XML_PATH_PATH_STYLE = 'magezero_r2/general/path_style';
     public const XML_PATH_CACHE_TTL = 'magezero_r2/general/cache_ttl';
+    public const XML_PATH_REMOVE_LOCAL_COPIES = 'magezero_r2/general/remove_local_copies';
     public const XML_PATH_BASE_MEDIA_URL_UNSECURE = 'web/unsecure/base_media_url';
     public const XML_PATH_BASE_MEDIA_URL_SECURE = 'web/secure/base_media_url';
 
@@ -106,5 +107,17 @@ class Config
             $url = trim((string)$this->scopeConfig->getValue(self::XML_PATH_BASE_MEDIA_URL_UNSECURE));
         }
         return rtrim($url, '/');
+    }
+
+    /**
+     * Whether media files are removed from pub/media at the end of each request or command once they
+     * are known to be in the bucket (see LocalCopyCleaner). On unless switched off.
+     *
+     * @return bool
+     */
+    public function removesLocalCopies(): bool
+    {
+        $value = $this->scopeConfig->getValue(self::XML_PATH_REMOVE_LOCAL_COPIES);
+        return $value === null || (bool)$value;
     }
 }

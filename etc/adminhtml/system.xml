@@ -56,6 +56,11 @@
                     <comment>How long to cache CDN file existence checks in Redis. Default: 3600 (1 hour)</comment>
                     <validate>validate-number validate-zero-or-greater</validate>
                 </field>
+                <field id="remove_local_copies" translate="label" type="select" sortOrder="100" showInDefault="1" showInWebsite="0" showInStore="0">
+                    <label>Remove Local Copies</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>At the end of each request or command, remove from pub/media the files it downloaded from or uploaded to the bucket. Files under tmp folders and files already on disk before are kept. Anything needed again is fetched from the bucket.</comment>
+                </field>
             </group>
             <group id="media_url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0">
                 <label>Media URL Configuration</label>

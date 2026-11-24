@@ -2,6 +2,15 @@
 
 Magento 2 module for Cloudflare R2 media storage. Designed for containerized deployments where media is stored in R2 and served via CDN.
 
+## VetShop Group fork
+
+A fork of [`magezero/magento2-cloudflare-r2-storage`](https://github.com/zynqa/module-cloudflare-r2-storage) 1.0.0, installed as `vetshopgroup/module-cloudflare-r2-storage` from this repository (a `vcs` entry under `repositories` in the site's `composer.json`). The Magento module is still `MageZero_CloudflareR2`, so its settings are unchanged. Changes from 1.0.0:
+
+- **Local copies are removed** (`Model/LocalCopyCleaner.php`). Our sites run on ordinary servers, not containers whose `pub/media` is a tmpfs, so every file the module downloaded from or uploaded to the bucket stayed in `pub/media` for good. Now, at the end of each request or command, those files are removed from disk; anything needed again is fetched from the bucket. Kept: files under a `tmp` folder (an admin upload is moved from its local tmp copy by the next request), and anything the request didn't confirm is in the bucket, such as what was on disk before the switch. Switch it off under **Stores > Configuration > MageZero > Cloudflare R2 Storage > Connection > Remove Local Copies** (`magezero_r2/general/remove_local_copies`).
+- **Folders outside `pub/media` are no longer deleted from the bucket.** Cleaning the merged CSS/JS (`pub/static/_cache/merged`) went through the media storage and was sent to the bucket as a key made of the absolute path; it failed when the bucket was missing.
+
+The unit tests need Magento's code; we run them with PHPUnit 9.6 against a Magento 2.4.6 installation (`vendor/autoload.php`, with this module's namespace mapped to the checkout first).
+
 ## Compatibility
 
 ### Requirements

@@ -5,6 +5,7 @@ use Aws\CommandInterface;
 use Aws\Exception\AwsException;
 use Aws\S3\S3Client;
 use MageZero\CloudflareR2\Model\Config;
+use MageZero\CloudflareR2\Model\LocalCopyCleaner;
 use MageZero\CloudflareR2\Model\MediaStorage\File\Storage\R2;
 use MageZero\CloudflareR2\Model\R2ClientFactory;
 use Magento\Framework\Filesystem\Driver\File as FileDriver;
@@ -698,5 +699,112 @@ class R2Test extends TestCase
             'directory' => 'catalog',
             'content' => 'This is plain text content',
         ]);
+    }
+
+    /**
+     * Saving the merged CSS/JS cleans pub/static/_cache/merged through the media storage helper (f3):
+     * a folder outside pub/media, which isn't in the bucket under any name.
+     */
+    public function testDeleteDirectoryIgnoresFoldersOutsideMedia(): void
+    {
+        $this->s3Client->expects($this->never())->method('listObjectsV2');
+        $this->s3Client->expects($this->never())->method('deleteObjects');
+
+        $result = $this->r2->deleteDirectory('/var/www/pub/static//_cache/merged/');
+
+        $this->assertSame($this->r2, $result);
+    }
+
+    public function testDeleteDirectoryStillDeletesAbsoluteMediaFolders(): void
+    {
+        $storageHelper = $this->createMock(StorageHelper::class);
+        $storageHelper->method('getMediaBaseDir')->willReturn('/var/www/pub/media');
+        $storageHelper->method('getMediaRelativePath')
+            ->willReturnCallback(fn($path) => ltrim(str_replace('/var/www/pub/media', '', $path), '/'));
+        $r2 = $this->createR2($storageHelper);
+        $this->s3Client->expects($this->once())->method('listObjectsV2')
+            ->with($this->callback(fn($params) => $params['Prefix'] === 'catalog/product/cache/'))
+            ->willReturn(['Contents' => [['Key' => 'catalog/product/cache/a.jpg']], 'IsTruncated' => false]);
+        $this->s3Client->expects($this->once())->method('deleteObjects');
+
+        $r2->deleteDirectory('/var/www/pub/media/catalog/product/cache');
+    }
+
+    public function testASavedFileIsTrackedForRemovalFromDisk(): void
+    {
+        $localCopies = $this->createMock(LocalCopyCleaner::class);
+        $localCopies->expects($this->once())->method('track')->with('catalog/product/test.jpg');
+        $r2 = $this->createR2(null, $localCopies);
+
+        $r2->saveFile(['filename' => 'test.jpg', 'directory' => 'catalog/product', 'content' => 'x']);
+    }
+
+    public function testAFileThatFailedToSaveIsNotTracked(): void
+    {
+        $command = $this->createMock(CommandInterface::class);
+        $this->s3Client->method('putObject')->willThrowException(new AwsException('Upload failed', $command));
+        $localCopies = $this->createMock(LocalCopyCleaner::class);
+        $localCopies->expects($this->never())->method('track');
+        $r2 = $this->createR2(null, $localCopies);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $r2->saveFile(['filename' => 'test.jpg', 'directory' => 'catalog/product', 'content' => 'x']);
+    }
+
+    /** The CMS image browser writes a folder's files to disk to list them. */
+    public function testFilesFetchedForAFolderAreTracked(): void
+    {
+        $this->s3Client->method('listObjectsV2')->willReturn([
+            'Contents' => [['Key' => 'wysiwyg/a.jpg'], ['Key' => 'wysiwyg/b.jpg']],
+        ]);
+        $this->s3Client->method('getObject')->willReturn(['Body' => 'file-content']);
+        $tracked = [];
+        $localCopies = $this->createMock(LocalCopyCleaner::class);
+        $localCopies->method('track')->willReturnCallback(function ($path) use (&$tracked) {
+            $tracked[] = $path;
+        });
+        $r2 = $this->createR2(null, $localCopies);
+
+        $r2->getDirectoryFiles('wysiwyg');
+
+        $this->assertSame(['wysiwyg/a.jpg', 'wysiwyg/b.jpg'], $tracked);
+    }
+
+    /**
+     * Synchronising the whole of pub/media into the bucket (System > Storage Configuration) must not
+     * empty pub/media: until the old storage is retired, it is the way back.
+     */
+    public function testImportedFilesAreNotTracked(): void
+    {
+        $localCopies = $this->createMock(LocalCopyCleaner::class);
+        $localCopies->expects($this->never())->method('track');
+        $r2 = $this->createR2(null, $localCopies);
+
+        $r2->importFiles([['filename' => 'a.jpg', 'directory' => 'catalog/product', 'content' => 'x']]);
+    }
+
+    private function createR2(?StorageHelper $storageHelper = null, ?LocalCopyCleaner $localCopies = null): R2
+    {
+        if ($storageHelper === null) {
+            $storageHelper = $this->createMock(StorageHelper::class);
+            $storageHelper->method('getMediaRelativePath')->willReturnArgument(0);
+            $storageHelper->method('getMediaBaseDir')->willReturn('/var/www/pub/media');
+        }
+        $clientFactory = $this->createMock(R2ClientFactory::class);
+        $clientFactory->method('create')->willReturn($this->s3Client);
+        $driver = $this->createMock(FileDriver::class);
+        $driver->method('getParentDirectory')->willReturnCallback(fn($path) => dirname($path));
+
+        return new R2(
+            $this->config,
+            $this->createMock(MediaHelper::class),
+            $storageHelper,
+            $this->createMock(LoggerInterface::class),
+            $clientFactory,
+            $driver,
+            $this->createMock(IoFile::class),
+            $this->httpClient,
+            $localCopies
+        );
     }
 }

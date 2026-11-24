@@ -3,6 +3,7 @@ namespace MageZero\CloudflareR2\Test\Unit\Plugin\MediaStorage;
 
 use MageZero\CloudflareR2\Model\Config;
 use MageZero\CloudflareR2\Model\DownloadedFileTracker;
+use MageZero\CloudflareR2\Model\LocalCopyCleaner;
 use MageZero\CloudflareR2\Model\MediaStorage\File\Storage\R2;
 use MageZero\CloudflareR2\Model\MediaStorage\File\Storage\R2Factory;
 use MageZero\CloudflareR2\Plugin\MediaStorage\DatabaseHelperPlugin;
@@ -347,5 +348,40 @@ class DatabaseHelperPluginTest extends TestCase
 
         $this->assertTrue($proceedCalled);
         $this->assertEquals('proceed-result', $result);
+    }
+
+    public function testADownloadedFileIsTrackedForRemovalFromDisk(): void
+    {
+        $r2Model = $this->getMockBuilder(R2::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['getId'])
+            ->onlyMethods(['loadByFilename', 'getData'])
+            ->getMock();
+        $r2Model->method('loadByFilename')->willReturnSelf();
+        $r2Model->method('getId')->willReturn('test-id');
+        $r2Model->method('getData')->willReturn(['filename' => 'test.jpg', 'content' => 'file-content']);
+        $fileModel = $this->createMock(FileStorage::class);
+        $fileModel->method('saveFile')->willReturn(true);
+        $subject = $this->createMock(Database::class);
+        $subject->method('checkDbUsage')->willReturn(true);
+        $subject->method('getStorageDatabaseModel')->willReturn($r2Model);
+        $subject->method('getMediaRelativePath')->willReturn('catalog/product/test.jpg');
+        $subject->method('getStorageFileModel')->willReturn($fileModel);
+        $this->config->method('isR2Selected')->willReturn(true);
+        $localCopies = $this->createMock(LocalCopyCleaner::class);
+        $localCopies->expects($this->once())->method('track')->with('catalog/product/test.jpg');
+        $plugin = new DatabaseHelperPlugin(
+            $this->config,
+            $this->r2Factory,
+            $this->downloadTracker,
+            $this->logger,
+            $localCopies
+        );
+
+        $plugin->aroundSaveFileToFilesystem(
+            $subject,
+            fn() => $this->fail('Proceed should not be called'),
+            '/var/www/pub/media/catalog/product/test.jpg'
+        );
     }
 }

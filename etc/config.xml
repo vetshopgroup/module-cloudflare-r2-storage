@@ -7,6 +7,7 @@
                 <path_style>1</path_style>
                 <key_prefix></key_prefix>
                 <connection_valid>0</connection_valid>
+                <remove_local_copies>1</remove_local_copies>
                 <secret_key backend_model="Magento\Config\Model\Config\Backend\Encrypted" />
             </general>
         </magezero_r2>
