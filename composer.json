@@ -1,8 +1,10 @@
 {
-  "name": "magezero/magento2-cloudflare-r2-storage",
-  "description": "Cloudflare R2 storage adapter for Magento 2 media storage",
+  "name": "vetshopgroup/module-cloudflare-r2-storage",
+  "description": "VetShop Group's fork of magezero/magento2-cloudflare-r2-storage: Cloudflare R2 storage adapter for Magento 2 media storage",
   "type": "magento2-module",
-  "license": ["OSL-3.0"],
+  "license": [
+    "OSL-3.0"
+  ],
   "require": {
     "php": "^7.4 || ^8.0",
     "magento/framework": ">=103.0.4",
